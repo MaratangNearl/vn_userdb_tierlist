@@ -198,12 +198,11 @@ class TierView(QScrollArea):
         if not games:
             return
             
-        tiers, is_range = group_games_by_tier(games, order)
-        
-        # Sort labels based on order
-        sorted_labels = sorted(tiers.keys(), reverse=(order == 'desc'))
+        from core.utils import group_games_by_tier
+        tiers, sorted_labels = group_games_by_tier(games, order)
         
         for label in sorted_labels:
+            is_range = tiers[label].get('is_range', False)
             row = TierRow(label, tiers[label]['color'], tiers[label]['games'], is_range)
             self.rows_layout.addWidget(row)
             
