@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QLayout, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLayout, QSizePolicy
 from PyQt6.QtCore import Qt, QPoint, QRect, QSize
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap, QFontMetrics
 
 class FlowLayout(QLayout):
     def __init__(self, parent=None, margin=-1, hSpacing=-1, vSpacing=-1):
@@ -94,13 +94,14 @@ class FlowLayout(QLayout):
 
 
 class GameCard(QWidget):
-    def __init__(self, game_data):
+    def __init__(self, game_data, show_score=False):
         super().__init__()
         self.game_data = game_data
+        self.show_score = show_score
         self.init_ui()
         
     def init_ui(self):
-        self.setFixedSize(120, 190)
+        self.setFixedSize(130, 200)
         self.setStyleSheet("""
             GameCard {
                 background-color: #333;
@@ -116,23 +117,55 @@ class GameCard(QWidget):
         self.img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         path = self.game_data.get('cover_image_path')
         if path:
-            pixmap = QPixmap(path).scaled(120, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+            pixmap = QPixmap(path).scaled(130, 160, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
             self.img_label.setPixmap(pixmap)
-        self.img_label.setFixedSize(120, 150)
+        self.img_label.setFixedSize(130, 160)
         
-        # Title
-        self.title_label = QLabel(self.game_data['title'])
+        # Title area
+        self.title_area = QWidget()
+        self.title_area.setFixedHeight(40)
+        self.title_area.setStyleSheet("""
+            QWidget {
+                background-color: #222; 
+                border-bottom-left-radius: 5px; 
+                border-bottom-right-radius: 5px;
+            }
+        """)
+        title_layout = QHBoxLayout(self.title_area)
+        title_layout.setContentsMargins(2, 2, 2, 2)
+        title_layout.setSpacing(2)
+        
+        if self.show_score:
+            self.score_label = QLabel(str(self.game_data['score']))
+            self.score_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.score_label.setStyleSheet("""
+                background-color: #E53935;
+                color: #FFFFFF;
+                border-radius: 3px;
+                font-weight: bold;
+                font-size: 10px;
+                padding: 1px;
+            """)
+            self.score_label.setFixedWidth(28)
+            title_layout.addWidget(self.score_label)
+        
+        self.title_label = QLabel()
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title_label.setWordWrap(True)
-        self.title_label.setStyleSheet("""
-            background-color: #222; 
-            color: #FFF; 
-            font-size: 11px; 
-            padding: 2px; 
-            border-bottom-left-radius: 5px; 
-            border-bottom-right-radius: 5px;
-        """)
-        self.title_label.setFixedHeight(40)
+        self.title_label.setStyleSheet("background-color: transparent; color: #FFF; font-size: 11px;")
+        
+        metrics = QFontMetrics(self.title_label.font())
+        available_width = 120 - (30 if self.show_score else 0)
+        full_text = self.game_data['title']
+        
+        # Limit to 2 lines (~available_width * 1.8)
+        if metrics.horizontalAdvance(full_text) > available_width * 1.8:
+            elided = metrics.elidedText(full_text, Qt.TextElideMode.ElideRight, int(available_width * 1.8))
+            self.title_label.setText(elided)
+        else:
+            self.title_label.setText(full_text)
+            
+        title_layout.addWidget(self.title_label)
         
         layout.addWidget(self.img_label)
-        layout.addWidget(self.title_label)
+        layout.addWidget(self.title_area)

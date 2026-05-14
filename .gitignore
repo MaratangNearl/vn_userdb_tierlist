@@ -6,19 +6,27 @@ __pycache__/
 
 # Environment
 .env
-.venv
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 
 # Project specific
 data/
 build/
+dist/
 *.spec
-*.pdf
-*.jpg
 .tempmediaStorage/
 scratch/
+
+# Documentation and temporary files
+V1.1_Update_Requirements.*
+업무지시서.pdf
+홍보글_초안.docx
+V1.1_Update_Notes.md
+font_test*.png
+
+# Asset source files (excluding current assets)
+icon2.png
 icon.jpg
+make_html.py
+make_icon.py

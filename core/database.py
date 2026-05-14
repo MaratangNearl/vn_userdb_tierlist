@@ -52,6 +52,17 @@ def update_game(game_id, title, score, comment, vndb_url, cover_image_path):
 def delete_game(game_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    # Get image path before deleting
+    cursor.execute('SELECT cover_image_path FROM games WHERE id = ?', (game_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        img_path = row[0]
+        if os.path.exists(img_path):
+            try:
+                os.remove(img_path)
+            except:
+                pass
+    
     cursor.execute('DELETE FROM games WHERE id = ?', (game_id,))
     conn.commit()
     conn.close()

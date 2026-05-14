@@ -2,21 +2,89 @@ import os
 import shutil
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QSpinBox, QSlider, QTextEdit, 
-                             QPushButton, QFileDialog, QMessageBox, QWidget)
+                             QPushButton, QFileDialog, QMessageBox, QWidget, 
+                             QFormLayout, QComboBox)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from core.database import add_game, update_game
 from core.vndb_api import VndbFetchThread
+from core.utils import load_config, save_config
+from ui.translations import TRANSLATIONS
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.config = load_config()
+        self.lang = self.config.get("language", "한국어")
+        self.texts = TRANSLATIONS.get(self.lang, TRANSLATIONS["한국어"])
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle(self.texts["btn_settings"])
+        self.setFixedWidth(400)
+        layout = QVBoxLayout(self)
+        
+        form = QFormLayout()
+        
+        # Language
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(TRANSLATIONS.keys())
+        self.lang_combo.setCurrentText(self.lang)
+        form.addRow(self.texts["settings_lang"], self.lang_combo)
+        
+        # Title Language
+        self.title_combo = QComboBox()
+        self.title_combo.addItem(self.texts["settings_title_original"], "original")
+        self.title_combo.addItem(self.texts["settings_title_en"], "en")
+        
+        index = self.title_combo.findData(self.config.get("title_lang", "original"))
+        if index >= 0:
+            self.title_combo.setCurrentIndex(index)
+        
+        form.addRow(self.texts["settings_title_lang"], self.title_combo)
+        
+        layout.addLayout(form)
+        
+        # Copyright
+        layout.addWidget(QLabel(f"<b>{self.texts['settings_copyright']}</b>"))
+        self.copy_label = QLabel(self.texts["copyright_text"])
+        self.copy_label.setWordWrap(True)
+        self.copy_label.setStyleSheet("color: gray; font-size: 11px;")
+        layout.addWidget(self.copy_label)
+        
+        layout.addStretch()
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_save = QPushButton(self.texts["btn_save"])
+        btn_save.clicked.connect(self.save_settings)
+        btn_cancel = QPushButton(self.texts["btn_cancel"])
+        btn_cancel.clicked.connect(self.reject)
+        
+        btn_layout.addWidget(btn_save)
+        btn_layout.addWidget(btn_cancel)
+        layout.addLayout(btn_layout)
+
+    def save_settings(self):
+        self.config["language"] = self.lang_combo.currentText()
+        self.config["title_lang"] = self.title_combo.currentData()
+        save_config(self.config)
+        self.accept()
 
 class GameDialog(QDialog):
     def __init__(self, parent=None, game_data=None):
         super().__init__(parent)
         self.game_data = game_data
         self.cover_path = game_data['cover_image_path'] if game_data else ""
+        
+        config = load_config()
+        self.lang = config.get("language", "한국어")
+        self.texts = TRANSLATIONS.get(self.lang, TRANSLATIONS["한국어"])
+        
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("게임 추가" if not self.game_data else "게임 편집")
+        self.setWindowTitle(self.texts["btn_add"] if not self.game_data else self.texts["btn_edit"])
         self.resize(500, 400)
         
         main_layout = QHBoxLayout(self)
@@ -31,12 +99,12 @@ class GameDialog(QDialog):
             pixmap = QPixmap(self.cover_path).scaled(150, 220, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
             self.img_label.setPixmap(pixmap)
         else:
-            self.img_label.setText("이미지 없음")
+            self.img_label.setText(self.texts["label_no_img"])
             
-        btn_vndb = QPushButton("VNDB API 연동")
+        btn_vndb = QPushButton(self.texts["btn_vndb_fetch"])
         btn_vndb.clicked.connect(self.fetch_vndb)
         
-        btn_local = QPushButton("로컬 이미지")
+        btn_local = QPushButton(self.texts["btn_local_img"])
         btn_local.clicked.connect(self.load_local_image)
         
         left_layout.addWidget(self.img_label)
@@ -48,17 +116,17 @@ class GameDialog(QDialog):
         right_layout = QVBoxLayout()
         
         # Title
-        right_layout.addWidget(QLabel("제목 (필수):"))
+        right_layout.addWidget(QLabel(self.texts["label_title"]))
         self.title_input = QLineEdit()
         right_layout.addWidget(self.title_input)
         
         # VNDB URL
-        right_layout.addWidget(QLabel("VNDB 주소 또는 ID:"))
+        right_layout.addWidget(QLabel(self.texts["label_vndb"]))
         self.vndb_input = QLineEdit()
         right_layout.addWidget(self.vndb_input)
         
         # Score
-        right_layout.addWidget(QLabel("평점 (0~100):"))
+        right_layout.addWidget(QLabel(self.texts["label_score"]))
         score_layout = QHBoxLayout()
         self.score_slider = QSlider(Qt.Orientation.Horizontal)
         self.score_slider.setRange(0, 100)
@@ -73,15 +141,15 @@ class GameDialog(QDialog):
         right_layout.addLayout(score_layout)
         
         # Comment
-        right_layout.addWidget(QLabel("코멘트:"))
+        right_layout.addWidget(QLabel(self.texts["label_comment"]))
         self.comment_input = QTextEdit()
         right_layout.addWidget(self.comment_input)
         
         # Buttons
         btn_layout = QHBoxLayout()
-        btn_save = QPushButton("저장")
+        btn_save = QPushButton(self.texts["btn_save"])
         btn_save.clicked.connect(self.save_data)
-        btn_cancel = QPushButton("취소")
+        btn_cancel = QPushButton(self.texts["btn_cancel"])
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(btn_save)
@@ -102,7 +170,7 @@ class GameDialog(QDialog):
     def fetch_vndb(self):
         url = self.vndb_input.text().strip()
         if not url:
-            QMessageBox.warning(self, "경고", "VNDB 주소나 ID를 입력해주세요.")
+            QMessageBox.warning(self, self.texts["msg_warning"], self.texts["msg_vndb_empty"])
             return
             
         self.thread = VndbFetchThread(url)
@@ -110,19 +178,28 @@ class GameDialog(QDialog):
         self.thread.error.connect(self.on_vndb_error)
         self.thread.start()
         
-    def on_vndb_success(self, title, image_path):
+    def on_vndb_success(self, title, alttitle, image_path):
+        config = load_config()
+        title_lang = config.get("title_lang", "original")
+        
+        # Use alttitle if available and requested
+        final_title = alttitle if title_lang == "original" and alttitle else title
+        
         if not self.title_input.text():
-            self.title_input.setText(title)
-        self.cover_path = image_path
-        pixmap = QPixmap(image_path).scaled(150, 220, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-        self.img_label.setPixmap(pixmap)
-        QMessageBox.information(self, "성공", "VNDB에서 정보를 성공적으로 불러왔습니다.")
+            self.title_input.setText(final_title)
+        
+        if image_path:
+            self.cover_path = image_path
+            pixmap = QPixmap(image_path).scaled(150, 220, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+            self.img_label.setPixmap(pixmap)
+        
+        QMessageBox.information(self, self.texts["msg_info"], self.texts["msg_vndb_success"])
         
     def on_vndb_error(self, err_msg):
-        QMessageBox.warning(self, "오류", err_msg)
+        QMessageBox.warning(self, self.texts["msg_error"], err_msg)
         
     def load_local_image(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "이미지 선택", "", "Images (*.png *.jpg *.jpeg)")
+        file_path, _ = QFileDialog.getOpenFileName(self, self.texts["btn_local_img"], "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
             # Copy to data/covers
             os.makedirs(os.path.join("data", "covers"), exist_ok=True)
@@ -136,8 +213,17 @@ class GameDialog(QDialog):
     def save_data(self):
         title = self.title_input.text().strip()
         if not title:
-            QMessageBox.warning(self, "경고", "제목을 입력해주세요.")
+            QMessageBox.warning(self, self.texts["msg_warning"], self.texts["msg_title_empty"])
             return
+            
+        # Duplicate check
+        from core.database import get_all_games
+        all_games = get_all_games()
+        for g in all_games:
+            if g['title'] == title:
+                if not self.game_data or g['id'] != self.game_data['id']:
+                    QMessageBox.warning(self, self.texts["msg_warning"], self.texts["msg_title_exists"])
+                    return
             
         score = self.score_spin.value()
         comment = self.comment_input.toPlainText().strip()

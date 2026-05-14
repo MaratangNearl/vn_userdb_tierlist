@@ -3,6 +3,7 @@ import os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFontDatabase, QFont, QIcon
 from core.database import init_db
+from core.utils import load_config
 from ui.main_window import MainWindow
 
 def main():
@@ -30,6 +31,7 @@ def main():
     
     # Show main window
     window = MainWindow()
+    window.apply_theme()
     window.show()
     
     sys.exit(app.exec())

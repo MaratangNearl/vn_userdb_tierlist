@@ -5,6 +5,54 @@ import zipfile
 import sys
 from PIL import Image, ImageDraw, ImageFont
 import textwrap
+import re
+import json
+
+def get_language_priority(text):
+    if not text:
+        return 99
+    c = text[0]
+    # Hangul
+    if '\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff' or '\u3130' <= c <= '\u318f':
+        return 1
+    # Japanese (Hiragana/Katakana)
+    elif '\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff':
+        return 2
+    # English/Latin
+    elif '\u0041' <= c <= '\u005a' or '\u0061' <= c <= '\u007a':
+        return 3
+    # Kanji / CJK
+    elif '\u4e00' <= c <= '\u9fff':
+        return 4
+    return 5
+
+def sort_games(games, order='desc'):
+    # order: 'desc' or 'asc'
+    def key_func(g):
+        score_val = -g['score'] if order == 'desc' else g['score']
+        return (score_val, get_language_priority(g['title']), g['title'].lower())
+    
+    return sorted(games, key=key_func)
+
+CONFIG_PATH = os.path.join("data", "config.json")
+
+def load_config():
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "colors": {},
+        "language": "한국어",
+        "theme": "dark",
+        "title_lang": "original"
+    }
+
+def save_config(config):
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(config, f, ensure_ascii=False, indent=4)
 
 def backup_data(dest_folder):
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -16,6 +64,10 @@ def backup_data(dest_folder):
         db_path = os.path.join("data", "vnlist.db")
         if os.path.exists(db_path):
             zipf.write(db_path, os.path.join("data", "vnlist.db"))
+        
+        # Add config
+        if os.path.exists(CONFIG_PATH):
+            zipf.write(CONFIG_PATH, os.path.join("data", "config.json"))
         
         # Add covers
         covers_path = os.path.join("data", "covers")
@@ -57,18 +109,32 @@ TIER_COLORS = {
 }
 
 def get_tier_label_and_color(score):
-    if score >= 91: return "91~100", TIER_COLORS["91~100"]
-    if score >= 81: return "81~90", TIER_COLORS["81~90"]
-    if score >= 71: return "71~80", TIER_COLORS["71~80"]
-    if score >= 61: return "61~70", TIER_COLORS["61~70"]
-    if score >= 51: return "51~60", TIER_COLORS["51~60"]
-    if score >= 41: return "41~50", TIER_COLORS["41~50"]
-    if score >= 31: return "31~40", TIER_COLORS["31~40"]
-    if score >= 21: return "21~30", TIER_COLORS["21~30"]
-    if score >= 11: return "11~20", TIER_COLORS["11~20"]
-    return "0~10", TIER_COLORS["0~10"]
+    config = load_config()
+    custom_colors = config.get("colors", {})
+    
+    def get_color(label, default):
+        return custom_colors.get(label, default)
 
-def group_games_by_tier(games):
+    if score >= 91: return "91~100", get_color("91~100", TIER_COLORS["91~100"])
+    if score >= 81: return "81~90", get_color("81~90", TIER_COLORS["81~90"])
+    if score >= 71: return "71~80", get_color("71~80", TIER_COLORS["71~80"])
+    if score >= 61: return "61~70", get_color("61~70", TIER_COLORS["61~70"])
+    if score >= 51: return "51~60", get_color("51~60", TIER_COLORS["51~60"])
+    if score >= 41: return "41~50", get_color("41~50", TIER_COLORS["41~50"])
+    if score >= 31: return "31~40", get_color("31~40", TIER_COLORS["31~40"])
+    if score >= 21: return "21~30", get_color("21~30", TIER_COLORS["21~30"])
+    if score >= 11: return "11~20", get_color("11~20", TIER_COLORS["11~20"])
+    return "0~10", get_color("0~10", TIER_COLORS["0~10"])
+
+def get_contrast_color(hex_color):
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) == 3:
+        hex_color = ''.join([c*2 for c in hex_color])
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "#000000" if luminance > 0.5 else "#FFFFFF"
+
+def group_games_by_tier(games, order='desc'):
     distinct_scores = set(g['score'] for g in games)
     use_exact_score = len(distinct_scores) <= 10
     
@@ -82,24 +148,31 @@ def group_games_by_tier(games):
             label, color = get_tier_label_and_color(score)
             
         if label not in tiers:
-            tiers[label] = {"color": color, "games": []}
+            tiers[label] = {"color": color, "games": [], "is_range": not use_exact_score}
         tiers[label]["games"].append(g)
     
-    # Sort tiers descending
+    # Sort tiers numerically
     def tier_sort_key(label):
         if '~' in label:
             return int(label.split('~')[0])
-        return int(label)
+        try:
+            return int(label)
+        except:
+            return 0
         
-    sorted_labels = sorted(tiers.keys(), key=tier_sort_key, reverse=True)
+    sorted_labels = sorted(tiers.keys(), key=tier_sort_key, reverse=(order == 'desc'))
     return tiers, sorted_labels
 
-def export_tier_list(games, dest_path):
+def export_tier_list(games, dest_path, theme="dark"):
     # games is a list of dicts from database
     width = 1200
-    bg_color = "#1E1E1E"
+    bg_color = "#1E1E1E" if theme == "dark" else "#F0F2F5"
+    card_bg = "#333333" if theme == "dark" else "#FFFFFF"
+    title_bg = "#222222" if theme == "dark" else "#E4E7ED"
+    text_color = "#FFFFFF" if theme == "dark" else "#2C3E50"
+    
     label_width = 80
-    card_w, card_h = 120, 190
+    card_w, card_h = 130, 200
     padding = 20
     gap = 10
     
@@ -109,7 +182,15 @@ def export_tier_list(games, dest_path):
     else:
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         
-    font_path = os.path.join(base_path, "assets", "NotoSansKR.otf")
+    config = load_config()
+    lang = config.get("language", "한국어")
+    
+    font_name = "NotoSansJP.otf" if lang == "日本語" else "NotoSansKR.otf"
+    font_path = os.path.join(base_path, "assets", font_name)
+    # Fallback to KR if JP font missing
+    if not os.path.exists(font_path):
+        font_path = os.path.join(base_path, "assets", "NotoSansKR.otf")
+        
     try:
         font_large = ImageFont.truetype(font_path, 20)
         font_small = ImageFont.truetype(font_path, 11)
@@ -165,25 +246,48 @@ def export_tier_list(games, dest_path):
             y = cy + line_idx * (card_h + gap)
             
             # Draw card bg
-            draw.rectangle([x, y, x + card_w, y + card_h], fill="#333333")
+            draw.rectangle([x, y, x + card_w, y + card_h], fill=card_bg)
             
             # Draw cover
             cover_path = g.get('cover_image_path')
             if cover_path and os.path.exists(cover_path):
                 try:
                     cover_img = Image.open(cover_path).convert("RGB")
-                    # Crop/Resize to fit 120x150
-                    cover_img = cover_img.resize((card_w, 150), Image.Resampling.LANCZOS)
+                    # Crop/Resize to fit 130x160
+                    cover_img = cover_img.resize((card_w, 160), Image.Resampling.LANCZOS)
                     img.paste(cover_img, (x, y))
                 except:
                     pass
             
             # Draw title background
-            draw.rectangle([x, y + 150, x + card_w, y + card_h], fill="#222222")
+            draw.rectangle([x, y + 160, x + card_w, y + card_h], fill=title_bg)
+            
+            is_range = tiers[label].get("is_range", False)
+            title_area_x = x
+            title_area_w = card_w
+            
+            if is_range:
+                score_str = str(g['score'])
+                draw.rectangle([x + 2, y + 162, x + 30, y + 176], fill="#E53935")
+                s_bbox = draw.textbbox((0,0), score_str, font=font_small)
+                s_tw = s_bbox[2] - s_bbox[0]
+                draw.text((x + 2 + (28 - s_tw)/2, y + 162), score_str, fill="#FFFFFF", font=font_small)
+                title_area_x = x + 30
+                title_area_w = card_w - 30
             
             # Draw title
             title = g['title']
-            wrapped = textwrap.wrap(title, width=12)
+            
+            # Smart font selection for mixed/Japanese titles
+            import re
+            is_jp = bool(re.search(r'[\u3040-\u30ff]', title))
+            current_font_path = os.path.join(base_path, "assets", "NotoSansJP.otf") if is_jp else font_path
+            try:
+                title_font = ImageFont.truetype(current_font_path, 11)
+            except:
+                title_font = font_small
+
+            wrapped = textwrap.wrap(title, width=10 if is_range else 13)
             if len(wrapped) > 2:
                 wrapped = wrapped[:2]
                 if len(wrapped[1]) > 2:
@@ -191,11 +295,11 @@ def export_tier_list(games, dest_path):
                 else:
                     wrapped[1] = ".."
                     
-            text_y = y + 155
+            text_y = y + 165
             for line in wrapped:
-                t_bbox = draw.textbbox((0,0), line, font=font_small)
+                t_bbox = draw.textbbox((0,0), line, font=title_font)
                 t_tw = t_bbox[2] - t_bbox[0]
-                draw.text((x + (card_w - t_tw)/2, text_y), line, fill="#FFFFFF", font=font_small)
+                draw.text((title_area_x + (title_area_w - t_tw)/2, text_y), line, fill=text_color, font=title_font)
                 text_y += 14
             
         current_y += row_h + gap

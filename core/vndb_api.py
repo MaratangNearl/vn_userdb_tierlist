@@ -16,7 +16,7 @@ def extract_vn_id(url_or_id):
     return None
 
 class VndbFetchThread(QThread):
-    finished = pyqtSignal(str, str) # title, image_path
+    finished = pyqtSignal(str, str, str) # title, alttitle, image_path
     error = pyqtSignal(str)
 
     def __init__(self, vn_input):
@@ -32,7 +32,7 @@ class VndbFetchThread(QThread):
         url = "https://api.vndb.org/kana/vn"
         payload = {
             "filters": ["id", "=", vn_id],
-            "fields": "title, image.url, image.dims"
+            "fields": "title, alttitle, image.url"
         }
         
         try:
@@ -43,6 +43,7 @@ class VndbFetchThread(QThread):
             if data.get("results"):
                 result = data["results"][0]
                 title = result.get("title", "")
+                alttitle = result.get("alttitle", "")
                 image_info = result.get("image", {})
                 image_url = image_info.get("url")
                 
@@ -53,15 +54,13 @@ class VndbFetchThread(QThread):
                     covers_dir = os.path.join("data", "covers")
                     os.makedirs(covers_dir, exist_ok=True)
                     
-                    # Some images might be different formats, but VNDB usually provides jpg.
-                    # We will save it as jpg.
                     image_path = os.path.join(covers_dir, f"{vn_id}.jpg")
                     with open(image_path, "wb") as f:
                         f.write(img_resp.content)
                     
-                    self.finished.emit(title, image_path)
+                    self.finished.emit(title, alttitle, image_path)
                 else:
-                    self.error.emit("표지 이미지 URL을 찾을 수 없습니다.")
+                    self.finished.emit(title, alttitle, "")
             else:
                 self.error.emit("결과를 찾을 수 없습니다.")
         except Exception as e:
